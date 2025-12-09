@@ -8,11 +8,13 @@ AutoCG generates well-aligned reactant/product structures for transition state (
 - numpy, scipy ≥ 1.11
 - cclib ≥ 1.7.1
 - ORCA or Gaussian available on PATH (select with `-ca orca|gaussian`)
-- Optional: CREST 6.2.3 for TS conformer sampling
+- Optional: CREST 6.2.3 for TS conformer sampling (https://github.com/crest-lab/crest)
 
 ## Installation
 
 ```bash
+git clone https://github.com/your/repo.git
+cd autoCG
 pip install .
 # or editable
 pip install -e .
@@ -25,14 +27,40 @@ pip install -e .
   autocg "[H:1][H:2].[C-:3]#[O+:4]>>[O:4]=[C:3]([H:1])[H:2]" \
     -sd /path/to/save -wd /path/to/work
   ```
+- From unmapped SMILES (AutoCG will infer bond changes):
+  ```bash
+  autocg "[H][H].[C-]#[O+]>>C=O" -sd /path/to/save -wd /path/to/work
+  ```
 - From geometry + bond changes (`input.com`):
   ```bash
   autocg "/path/to/input.com" -sd /path/to/save -wd /path/to/work
+  ```
+  Minimal `input.com` example:
+  ```
+  0 1  # charge multiplicity
+  H 0.35400009037695684 0.0 0.0
+  H -0.35400009037695684 0.0 0.0
+  C 0.5640604828962581 0.0 4.0
+  O -0.5640604828962581 0.0 4.0
+  # Must give empty line
+  1 2 B  # Bond change: B -> break
+  1 3 F  # Bond change: F -> form
+  2 3 F
   ```
 
 Important options: `-nc` (#conformers), `-ts/-fs/-bs` (bond scaling), `-p` (UFF preopt), `-se` (stereo enumeration), `-uc` (CREST), `-ca` (calculator).
 
 Calculator setup: ensure `g09/g16` or `orca` is on `PATH`; pick with `-ca gaussian|orca`. CREST is optional but needed for `-uc 1`.
+
+## Inputs
+
+- **SMILES**:
+  - If atom mapping is present, it is used directly to infer bond changes; otherwise AutoCG infers minimal bond form/break automatically.
+  - Quote the SMILES in the shell to avoid expansion.
+  - Example (mapped): `[C:1](=[O:2])[O:3][H:4]>>[C:1](=[O:2])[O-:3].[H+:4]`
+  - Example (unmapped): `[C](=O)O>>CO`
+- **Geometry**: `input.com` style must include charge/multiplicity on the first line, coordinates, a blank line, then bond-change lines (`B` for break, `F` for form).
+- Charge/multiplicity should be provided; missing values are inferred when possible but may be ambiguous.
 
 ## Outputs
 
@@ -55,6 +83,3 @@ Each generated conformer is saved under `result_<idx>/` in the save directory:
 
 BSD 3-Clause License.
 
-## Contact
-
-[kyunghoonlee@kaist.ac.kr](mailto:kyunghoonlee@kaist.ac.kr)
