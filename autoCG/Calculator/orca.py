@@ -237,6 +237,7 @@ class Orca:
             print ('Check your error directory !!!')
 
     def change_working_directory(self,working_directory):
+        working_directory = os.path.abspath(working_directory)
         # Get current reaction coordinate
         if not os.path.exists(working_directory):
             print ('Working directory does not exist! Creating new directory ...')
@@ -360,6 +361,8 @@ class Orca:
         '''
         current_directory = os.getcwd()
         os.chdir(self.working_directory)
+        if 'engrad' not in extra and 'engrad' not in str.lower(self.content):
+            extra = ' engrad ' + extra
         self.make_input([molecule],chg,multiplicity,file_name=file_name,extra=extra)
         os.system(f'{self.command} {file_name}.com > {file_name}.log')
         #if 'xtb' in str.lower(self.content):
@@ -588,4 +591,3 @@ if __name__ == '__main__':
     frequencies,vibrations = parse_vibrations(directory)
     print (frequencies, len(frequencies))
     print (vibrations,vibrations.shape)
-

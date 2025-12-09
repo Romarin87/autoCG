@@ -204,6 +204,7 @@ class GuessGenerator:
             return
         if file_name is None:
             return
+        os.makedirs(self.save_directory, exist_ok=True)
         content = self.get_geometry(molecule)
         e = molecule.get_energy()
         with open(os.path.join(self.save_directory, file_name), mode) as f:
@@ -725,7 +726,7 @@ class GuessGenerator:
 
         # Log changed into the specific folder directory
         if save_directory is not None:
-            os.system(f"mkdir -p {save_directory}")
+            os.makedirs(save_directory, exist_ok=True)
             self.save_directory = save_directory
 
         self.write_geometry(ts_molecule,'initial_ts','xyz')
@@ -877,16 +878,6 @@ class GuessGenerator:
         self.write_log(f"Starting time: {starttime}\n\n")
         self.write_log(f"All guesses will be saved in {self.save_directory}\n")
 
-        # Check reaction_info
-        bond_breaks = reaction_info['b']
-        adj_matrix = reactant.get_adj_matrix()
-        for bond in bond_breaks:
-            s, e = bond
-            if adj_matrix[s][e] == 0:
-                print ('Wrong reaction info is given !!!')
-                print ('Check the input again !!!')
-                exit()
-
         if reaction_info is None:
             self.write_log("Finding reaction information with gurobi!\n")
             if reactant is None or product is None:
@@ -902,6 +893,16 @@ class GuessGenerator:
                 exit()
         else:
             self.write_log("Using the provided reaction!\n")
+
+        # Check reaction_info
+        bond_breaks = reaction_info['b']
+        adj_matrix = reactant.get_adj_matrix()
+        for bond in bond_breaks:
+            s, e = bond
+            if adj_matrix[s][e] == 0:
+                print ('Wrong reaction info is given !!!')
+                print ('Check the input again !!!')
+                exit()
         reactant_copy = reactant.copy()
         if chg is not None:
             reactant_copy.chg = chg
@@ -997,7 +998,7 @@ class GuessGenerator:
             st = datetime.datetime.now()
             # Log changed into the specific folder directory
             if save_directory is not None:
-                new_save_directory = os.path.join(save_directory, str(i + 1))
+                new_save_directory = os.path.join(save_directory, f"result_{i + 1}")
                 os.system(f"mkdir -p {new_save_directory}")
             else:
                 new_save_directory = None
@@ -1089,6 +1090,8 @@ class GuessGenerator:
             reaction_info = self.get_reaction_info_from_mapping(
                 reactant_smiles, product_smiles
             )
+            if reaction_info is None:
+                print("Warning: Atom mapping incomplete; falling back to automatic bond-change inference.")
         # Reactant must have geometry ...
         # rd_reactant = Chem.MolFromSmiles(reactant_smiles)
         reactant = chem.Intermediate(reactant_smiles)
@@ -1167,9 +1170,8 @@ class GuessGenerator:
         )
 
 
-if __name__ == "__main__":
+def main(argv=None):
     sys.stdout = sys.__stdout__
-    print("hihihi", os.getcwd())
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--save_directory",
@@ -1367,10 +1369,22 @@ if __name__ == "__main__":
     )
 
 
-    args = parser.parse_args(sys.argv[2:])
-    save_directory = args.save_directory
-    working_directory = args.working_directory
-    print("generator.py input options", sys.argv[1])
+    if argv is None:
+        argv = sys.argv[1:]
+    if len(argv) == 0:
+        parser.print_help()
+        return
+    reaction_arg = argv[0]
+    args = parser.parse_args(argv[1:])
+    save_directory = (
+        os.path.abspath(args.save_directory) if args.save_directory is not None else None
+    )
+    working_directory = (
+        os.path.abspath(args.working_directory)
+        if args.working_directory is not None
+        else None
+    )
+    print("generator.py input options", reaction_arg)
     if args.calculator == "gaussian":
         calculator = gaussian.Gaussian()
     else:
@@ -1404,22 +1418,23 @@ if __name__ == "__main__":
     generator.preoptimize = bool(args.preoptimize)
     print (generator.preoptimize)
 
-    if ">>" in sys.argv[1]:
+    if ">>" in reaction_arg:
         (
             RP_pairs,
             reaction_info,
             mapping_info,
             matching_results,
         ) = generator.get_oriented_RPs_from_smiles(
-            sys.argv[1],
+            reaction_arg,
             save_directory=save_directory,
             working_directory=working_directory,
         )
     else:
-        input_directory = sys.argv[1]
+        input_directory = reaction_arg
         folder_directory = os.path.dirname(input_directory)
         if folder_directory is None:
             folder_directory = os.getcwd()
+        folder_directory = os.path.abspath(folder_directory)
         if save_directory is None:
             save_directory = folder_directory
          
@@ -1447,3 +1462,7 @@ if __name__ == "__main__":
             save_directory=save_directory,
             working_directory=working_directory,
         )
+
+
+if __name__ == "__main__":
+    main()

@@ -15,7 +15,7 @@ import cclib
 
 ### ace-reaction libraries ###
 from autoCG import chem
-from autoCG import process
+from autoCG.utils import process
 
 '''
 You can define your own calculator, depending on your using software!!!

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autocg"
+version = "0.1.0"
+description = "AutoCG: generate reactant/product conformations for TS searches"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{ name = "AutoCG authors" }]
+dependencies = [
+    "numpy",
+    "scipy>=1.11",
+    "cclib>=1.7.1,<2",
+]
+
+[project.optional-dependencies]
+rdkit = ["rdkit-pypi"]
+
+[project.scripts]
+autocg = "autoCG.generate:main"
+
+[tool.setuptools]
+packages = ["autoCG", "autoCG.utils", "autoCG.Calculator", "autoCG.stereochemistry", "autoCG.subpage"]
+include-package-data = true

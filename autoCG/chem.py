@@ -436,7 +436,7 @@ class Molecule:
             pass
 
         elif type(data) == str:
-            if data[-4] == '.':
+            if len(data) >= 4 and data[-4] == '.':
                 conformer = Conformer(data)
                 # At least make adjacency
                 self.atom_list = conformer.atom_list
@@ -2006,5 +2006,4 @@ class Conformer:
 
     def get_ace_mol(self):
         pass
-
 
