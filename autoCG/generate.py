@@ -338,7 +338,8 @@ class GuessGenerator:
         enumerating_atom_indices = []
         enumerating_bonds = []
 
-        print(reactant_atom_stereo_infos, reactant_bond_stereo_infos)        
+        self.write_log(f"Stereo atoms: {reactant_atom_stereo_infos}\n")
+        self.write_log(f"Stereo bonds: {reactant_bond_stereo_infos}\n")
 
         # First set fixing atom stereos
         reaction_participating_indices = []
@@ -478,17 +479,11 @@ class GuessGenerator:
         for i in range(len(ts_z_list)):
             molecule.atom_list[i].set_atomic_number(int(ts_z_list[i]))
 
-        print ('Before restore ...')
-        molecule.print_coordinate_list()
-
         self.scale_bonds(molecule,constraints)
         
         fixing_atoms = []
-        molecule.print_coordinate_list()
 
         self.uff_optimizer.optimize_geometry(molecule,constraints,k=2000,add_atom_constraint = False)
-        print ('After TS adjustment ...')
-        molecule.print_coordinate_list()
         # Really restore into original z list ...
         for i in range(len(original_z_list)):
             molecule.atom_list[i].set_atomic_number(int(original_z_list[i]))
@@ -745,7 +740,8 @@ class GuessGenerator:
             if multiplicity is not None:
                 reactant_molecules.multiplicity = multiplicity
                 product_molecules.multiplicity = multiplicity
-            print ('moving to R ...')
+            print("Moving to R optimization ...")
+            self.write_log("moving to R ...\n")
             formed_bonds = reaction_info["f"]
             broken_bonds = reaction_info["b"]
             self.move_to_minima(
@@ -769,16 +765,18 @@ class GuessGenerator:
             if self.preoptimize:
                 self.uff_optimization(reactant_molecules, formed_bonds, file_name="UFF_R.xyz")
 
-            print("###### R optimization #####")
+            self.write_log("###### R optimization #####\n")
+            print("R optimization started.")
             self.relax_geometry(reactant_molecules, [], "opt_R.xyz")
             # self.relax_geometry(reactant_molecules, formed_bonds, "opt_R.xyz")
-            print("R optimization finished !!!")
+            self.write_log("R optimization finished !!!\n")
+            print("R optimization finished.")
             # reactant_molecules.print_coordinate_list()
             self.write_geometry(reactant_molecules, "R", "xyz")
             self.write_geometry(reactant_molecules, "R", "com")
             self.calculator.clean_scratch()
-            print ('moving to P ...')
-            # print (formed_bonds,broken_bonds)
+            self.write_log("moving to P ...\n")
+            print("Moving to P optimization ...")
             self.move_to_minima(
                 product_molecules, formed_bonds, broken_bonds, "TS_to_P.xyz"
             )
@@ -800,11 +798,13 @@ class GuessGenerator:
             undesired_bonds = []
             # print ('P geometry ...')
             # product_molecules.print_coordinate_list()
-            print("###### P optimization #####")
+            self.write_log("###### P optimization #####\n")
+            print("P optimization started.")
             # self.separated_reactant_optimization(product_molecules,
             self.relax_geometry(product_molecules, [], "opt_P.xyz")
             # self.relax_geometry(product_molecules, broken_bonds, "opt_P.xyz")
-            print("P optimization finished !!!")
+            self.write_log("P optimization finished !!!\n")
+            print("P optimization finished.")
             self.write_geometry(product_molecules, "P", "xyz")
             self.write_geometry(product_molecules, "P", "com")
             self.calculator.clean_scratch()
@@ -856,27 +856,21 @@ class GuessGenerator:
 
         self.save_directory = save_directory
         starttime = datetime.datetime.now()
-        self.write_log(f"##### Guess generator info #####\n", "w")
-        # Parameter directly related to precomplexes
-        self.write_log(f"library: {self.library}\n")
-        self.write_log(f"ts_scale: {self.ts_scale}\n")
-        self.write_log(f"form_scale: {self.form_scale}\n")
-        self.write_log(f"broken_scale: {self.break_scale}\n")
-        self.write_log(f"num_conformer: {self.num_conformer}\n")
-        self.write_log(
-            f"E_criteria(Delta E) = {self.energy_criteria * self.unit_converter}kcal/mol\n"
-        )
+        self.write_log("##### Guess generator info #####\n", "w")
+        self.write_log("Parameters:\n")
+        self.write_log(f"  library: {self.library}\n")
+        self.write_log(f"  ts_scale: {self.ts_scale}\n")
+        self.write_log(f"  form_scale: {self.form_scale}\n")
+        self.write_log(f"  broken_scale: {self.break_scale}\n")
+        self.write_log(f"  num_conformer: {self.num_conformer}\n")
+        self.write_log(f"  E_criteria (Delta E): {self.energy_criteria * self.unit_converter} kcal/mol\n")
+        self.write_log(f"  step_size: {self.step_size}\n")
+        self.write_log(f"  qc_max_displacement: {self.qc_step_size}\n")
+        self.write_log(f"  num_relaxation: {self.num_relaxation}\n")
+        self.write_log(f"  calculator: {self.calculator.command}\n\n")
 
-        # Fine tuning parameters for delicate generation
-        self.write_log(
-            f"step_size (change in coordinates for bond participating coordinates): {self.step_size}\n"
-        )
-        self.write_log(f"Maximal displacement change: {self.qc_step_size}\n")
-        self.write_log(f"num_relaxation: {self.num_relaxation}\n")
-        self.write_log(f"Calculator: {self.calculator.command}\n\n")
-
-        self.write_log(f"Starting time: {starttime}\n\n")
-        self.write_log(f"All guesses will be saved in {self.save_directory}\n")
+        self.write_log(f"Start time: {starttime}\n")
+        self.write_log(f"Save directory: {self.save_directory}\n\n")
 
         if reaction_info is None:
             self.write_log("Finding reaction information with gurobi!\n")
@@ -900,8 +894,7 @@ class GuessGenerator:
         for bond in bond_breaks:
             s, e = bond
             if adj_matrix[s][e] == 0:
-                print ('Wrong reaction info is given !!!')
-                print ('Check the input again !!!')
+                self.write_log("Wrong reaction info is given !!! Check the input again !!!\n")
                 exit()
         reactant_copy = reactant.copy()
         if chg is not None:
@@ -911,7 +904,7 @@ class GuessGenerator:
         # Need to write reaction information here!
         self.write_log(f"####### Final reaction information #######\n")
 
-        print("reaction info:", reaction_info)
+        self.write_log(f"Reaction info: {reaction_info}\n")
         try:
             self.write_log(
                 f'reaction SMILES: {reactant.get_smiles("ace")}>>{product.get_smiles("ace")}\n'
@@ -920,8 +913,10 @@ class GuessGenerator:
             self.write_log("reaction SMILES cannot be generated !!!\n")
 
         # self.write_log(f'reaction SMILES: {reactant.get_smiles("ace")}>>{product.get_smiles("ace")}\n')
-        self.write_log(f"bond form: {reaction_info['f']}\n")
-        self.write_log(f"bond dissociation: {reaction_info['b']}\n\n")
+        self.write_log("Reaction info (mapped):\n")
+        self.write_log(f"  bond form: {reaction_info['f']}\n")
+        self.write_log(f"  bond dissociation: {reaction_info['b']}\n\n")
+        print(f"Reaction info: {reaction_info}")
         # Mapped reaction_info (reduced), to reconstruct original, use mapping_info!
         self.write_log("Start to get ts-like molecules.\n")
         st = datetime.datetime.now()
@@ -951,18 +946,14 @@ class GuessGenerator:
             reactant_atom_stereo_infos,
             reactant_bond_stereo_infos,
         ) = self.get_ts_like_molecules(reduced_reactant, reaction_info)
-        print(reactant_bond_stereo_infos)
-        print(len(ts_molecules))
-
         et = datetime.datetime.now()
-        self.write_log(
-            f"[{et}] {len(ts_molecules)} ts conformers generated... Taken time: {et-st}\n\n"
-        )
+        self.write_log(f"[{et}] Generated {len(ts_molecules)} TS conformers (time: {et-st}).\n\n")
+        print(f"Generated {len(ts_molecules)} TS conformers.")
         # Note that ts_molecules only contain atoms of molecules that are participating in the reaction
         # Relax ts_molecules with constraints
         energy_list = []
         if len(ts_molecules) == 0:
-            print("No conformer generated !!!")
+            self.write_log("No conformer generated !!!\n")
             return [], reaction_info, mapping_info, []
         
         molecule = ts_molecules[0]
@@ -975,7 +966,7 @@ class GuessGenerator:
             if chg is None:
                 chg = reduced_reactant.get_chg()
                 if chg is None:
-                    print("Charge is not given !!!")
+                    self.write_log("Charge is not given !!!\n")
         if multiplicity is None:
             multiplicity = (np.sum(reduced_reactant.get_z_list()) - chg) % 2 + 1
         reactant_copy = reduced_reactant.copy()
@@ -987,7 +978,7 @@ class GuessGenerator:
         current_directory = os.getcwd()
         original_z_list = reactant.get_z_list()
         n = len(ts_molecules)
-        print("n:", n)
+        self.write_log(f"Total TS conformers to process: {n}\n")
         reactant_product_pairs = []
         matching_results = []
         stereo_results = []
@@ -1007,7 +998,7 @@ class GuessGenerator:
                 st = datetime.datetime.now()
                 reactant_molecules, product_molecules = self.generate_RP_pair(ts_molecule,reaction_info,chg,multiplicity,new_save_directory,working_directory)
                 et = datetime.datetime.now()
-                self.write_log(f'Generation time for {i+1}th reaction conformation: {et - st}\n')
+                self.write_log(f"[{et}] Conformer {i+1}: generation time {et - st}\n")
                 self.calculator.clean_scratch()
                 matching_result = self.identify_connectivity(reactant_molecules, reduced_reactant, product_molecules, reduced_product)
                 reactant_molecules.bo_matrix = reduced_reactant.bo_matrix
@@ -1017,17 +1008,16 @@ class GuessGenerator:
                 stereo_result = [False, False]
                 self.save_directory = save_directory
                 self.write_log(f"{i+1}th RP structure generation failed ...\n")
-                print (f'Generation failed ... Skiped for {i+1}th trial')
                 reactant_molecules = None
                 product_molecules = None
 
             reactant_product_pairs.append((reactant_molecules,product_molecules))            
             matching_results.append(matching_result)
             stereo_results.append(stereo_result)
-            print(matching_result, stereo_result)
+            self.write_log(f"Conformer {i+1} matching: {matching_result}, stereo: {stereo_result}\n")
         
-        print("matching results:", matching_results)
-        print("stereo results:", stereo_results)
+        self.write_log(f"All matching results: {matching_results}\n")
+        self.write_log(f"All stereo results: {stereo_results}\n")
         # self.save_result(reaction_info, mapping_info, matching_results)
         stereo_matching_indices = []
         connectivity_matching_indices = []
@@ -1046,22 +1036,17 @@ class GuessGenerator:
                     stereo_matching_indices.append(i)
         else:
             stereo_matching_indices = list(range(len(matching_results)))
-        print ('check',connectivity_matching_indices, stereo_matching_indices)
         indices = list(set(connectivity_matching_indices) & set(stereo_matching_indices))
         indices.sort()
         printing_indices = [str(i+1) for i in indices]
 
-        print("good conformers:", printing_indices)
         content = ",".join(printing_indices)
-        self.write_log(
-            f"Conformer idx: {content} are expected to be good conformers !!!\n"
-        )
+        self.write_log(f"Good conformer indices: {content}\n")
+        print(f"Good conformers: {printing_indices}")
         # All molecules here, are in ts connectivity matrix!!! To reset, need to remove bonds using reaction_info
         endtime = datetime.datetime.now()
 
-        self.write_log(
-            f"Taken Time: {endtime - starttime}\n"
-        )
+        self.write_log(f"Total time: {endtime - starttime}\n")
 
         
         # Reset working and save directory
@@ -1091,7 +1076,7 @@ class GuessGenerator:
                 reactant_smiles, product_smiles
             )
             if reaction_info is None:
-                print("Warning: Atom mapping incomplete; falling back to automatic bond-change inference.")
+                self.write_log("Warning: Atom mapping incomplete; falling back to automatic bond-change inference.\n")
         # Reactant must have geometry ...
         # rd_reactant = Chem.MolFromSmiles(reactant_smiles)
         reactant = chem.Intermediate(reactant_smiles)
@@ -1384,7 +1369,6 @@ def main(argv=None):
         if args.working_directory is not None
         else None
     )
-    print("generator.py input options", reaction_arg)
     if args.calculator == "gaussian":
         calculator = gaussian.Gaussian()
     else:
@@ -1450,7 +1434,6 @@ def main(argv=None):
                 h_content = None
         else:
             h_content = None
-        print(h_content)
         generator.h_content = h_content
         (
             RP_pairs,

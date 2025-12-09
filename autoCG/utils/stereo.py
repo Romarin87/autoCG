@@ -49,13 +49,20 @@ def get_atom_stereo(mol,atom_index):
     if len(neighbor_indices) != 4:
         return None
     coordinate_list = mol.get_coordinate_list()
+    if coordinate_list is None:
+        print("Warning: Coordinates missing; skip atom stereo assignment.")
+        return 0
     # Make mirror plane
     a,b,c,d = neighbor_indices
-    v1 = get_vector(coordinate_list,atom_index,a)
-    v2 = get_vector(coordinate_list,atom_index,b)
+    try:
+        v1 = get_vector(coordinate_list,atom_index,a)
+        v2 = get_vector(coordinate_list,atom_index,b)
+        v3 = get_vector(coordinate_list,atom_index,c)
+    except Exception:
+        print("Warning: Invalid coordinates; skip atom stereo assignment.")
+        return 0
     n = get_cross_vector(v1,v2,True)
     # Compare sign with the third vector ...
-    v3 = get_vector(coordinate_list,atom_index,c)
     v3 /= np.linalg.norm(v3)
     c = np.dot(n,v3)
     if c > 0:
@@ -70,6 +77,9 @@ def get_bond_stereo(mol,bond): # Must be double ...
     if bo_matrix is None:
         print ('Cannot assign E/Z !!!')
         return None
+    coordinate_list = mol.get_coordinate_list()
+    if coordinate_list is None:
+        return 0
     start,end = bond
     if bo_matrix[start][end] == 1:
         print ('The given bond is not multiple !!!')
@@ -83,7 +93,14 @@ def get_bond_stereo(mol,bond): # Must be double ...
         return None
     start_neighbor_indices.sort()
     end_neighbor_indices.sort()
-    coordinate_list = mol.get_coordinate_list()
+    # Ensure coordinates exist for involved atoms
+    for idx in [start, end, start_neighbor_indices[0], end_neighbor_indices[0]]:
+        try:
+            x, y, z = coordinate_list[idx]
+        except Exception:
+            return 0
+        if x is None or y is None or z is None:
+            return 0
     # Take first element for each neighbor
     a = start_neighbor_indices[0]
     d = end_neighbor_indices[0]
@@ -406,8 +423,6 @@ if __name__ == '__main__':
     #print (atom_indices, bonds)
     #'''
     atom_indices, bonds = find_potential_chirals_and_stereo_bonds(molecule) 
-    print ('reference')
-    reference_molecule.print_coordinate_list()
     atom_stereo_infos = dict()
     bond_stereo_infos = dict()
     for atom_index in atom_indices:
@@ -420,7 +435,4 @@ if __name__ == '__main__':
     stereoisomers = enumerate_stereoisomers(reference_molecule,atom_indices,bonds,complex_indices)
 
     for i,stereoisomer in enumerate(stereoisomers):
-        print (f'{i+1}th stereoisomer ...')
-        stereoisomer.print_coordinate_list()
-
-
+        pass
