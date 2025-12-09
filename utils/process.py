@@ -282,7 +282,7 @@ def get_reduced_intermediate(intermediate, reduce_function):
         if bo_matrix is not None:
             reduced_bo_matrix = bo_matrix[index_function]
         if chg_list is not None:
-            reduce_chg_list = np.array([chg_list[index] for index in reduce_function])
+            reduced_chg_list = np.array([chg_list[index] for index in reduce_function])
     else:
         reduced_atom_list = [None] * n
         reduced_adj_matrix = np.zeros((n, n))

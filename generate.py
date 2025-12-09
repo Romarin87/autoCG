@@ -234,6 +234,46 @@ class GuessGenerator:
         else:  # Can be implemented later ...
             return None
 
+    def get_reaction_info_from_mapping(self, reactant_smiles, product_smiles):
+        """Use atom-mapped SMILES to derive bond changes directly."""
+        def extract_bonds_and_map(mol):
+            if mol is None:
+                return None, None, None
+            atom_map_to_idx = {}
+            bond_orders = {}
+            for atom in mol.GetAtoms():
+                m = atom.GetAtomMapNum()
+                if m > 0:
+                    atom_map_to_idx[m] = atom.GetIdx()
+            for bond in mol.GetBonds():
+                m1 = bond.GetBeginAtom().GetAtomMapNum()
+                m2 = bond.GetEndAtom().GetAtomMapNum()
+                if m1 == 0 or m2 == 0:
+                    return None, None, None  # incomplete mapping; fall back later
+                if m1 > m2:
+                    m1, m2 = m2, m1
+                bond_orders[(m1, m2)] = bond.GetBondTypeAsDouble()
+            return set(bond_orders.keys()), atom_map_to_idx, bond_orders
+
+        r_mol = Chem.MolFromSmiles(reactant_smiles, sanitize=False)
+        p_mol = Chem.MolFromSmiles(product_smiles, sanitize=False)
+        r_bonds, r_map, r_orders = extract_bonds_and_map(r_mol)
+        p_bonds, p_map, p_orders = extract_bonds_and_map(p_mol)
+        if r_bonds is None or p_bonds is None:
+            return None
+
+        all_bonds = r_bonds | p_bonds
+        reaction_info = {"b": [], "f": []}
+        for m1, m2 in all_bonds:
+            r_order = r_orders.get((m1, m2), 0)
+            p_order = p_orders.get((m1, m2), 0)
+            # Only treat appearance/disappearance as form/break; ignore pure bond-order changes
+            if r_order == 0 and p_order > 0:
+                reaction_info["f"].append(tuple(sorted((r_map[m1], r_map[m2]))))
+            elif p_order == 0 and r_order > 0:
+                reaction_info["b"].append(tuple(sorted((r_map[m1], r_map[m2]))))
+        return reaction_info
+    
     def find_spectator_molecules(self, reactant, reaction_info):
         # Find participating molecules (Non-participating is removed ...)
         reactant_atom_indices_for_each_molecule = (
@@ -932,7 +972,9 @@ class GuessGenerator:
         if chg is None:
             chg = molecule.chg
             if chg is None:
-                print("Charge is not given !!!")
+                chg = reduced_reactant.get_chg()
+                if chg is None:
+                    print("Charge is not given !!!")
         if multiplicity is None:
             multiplicity = (np.sum(reduced_reactant.get_z_list()) - chg) % 2 + 1
         reactant_copy = reduced_reactant.copy()
@@ -1042,6 +1084,11 @@ class GuessGenerator:
         smiles_list = reaction_smiles.split(">>")
         reactant_smiles = smiles_list[0]
         product_smiles = smiles_list[1]
+        reaction_info = None
+        if ":" in reaction_smiles:
+            reaction_info = self.get_reaction_info_from_mapping(
+                reactant_smiles, product_smiles
+            )
         # Reactant must have geometry ...
         # rd_reactant = Chem.MolFromSmiles(reactant_smiles)
         reactant = chem.Intermediate(reactant_smiles)
@@ -1049,7 +1096,7 @@ class GuessGenerator:
         return self.get_oriented_RPs(
             reactant,
             product,
-            None,
+            reaction_info,
             chg=chg,
             multiplicity=multiplicity,
             save_directory=save_directory,
