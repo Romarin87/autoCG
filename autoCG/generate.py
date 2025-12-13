@@ -833,6 +833,13 @@ class GuessGenerator:
         save_directory=None,
         working_directory=None,
     ):
+        # Track original working directory so we can restore it later
+        old_working_directory = getattr(self, "working_directory", None)
+        working_directory_changed = False
+        # Default save directory when not provided
+        if save_directory is None:
+            base_dir = working_directory if working_directory is not None else os.getcwd()
+            save_directory = os.path.abspath(base_dir)
         # Check save_directory
         if type(save_directory) is str:
             if not os.path.exists(save_directory):
@@ -851,8 +858,8 @@ class GuessGenerator:
             if self.calculator.working_directory == os.getcwd():
                 self.calculator.change_working_directory(working_directory)
             os.system(f'mkdir -p {working_directory}')
-            old_working_directory = self.working_directory
             self.working_directory = working_directory
+            working_directory_changed = True
 
         self.save_directory = save_directory
         starttime = datetime.datetime.now()
@@ -1051,7 +1058,8 @@ class GuessGenerator:
         
         # Reset working and save directory
         self.save_directory = None
-        self.working_directory = old_working_directory
+        if working_directory_changed:
+            self.working_directory = old_working_directory
         return (
             reactant_product_pairs,
             reaction_info,
