@@ -4,7 +4,7 @@ AutoCG generates well-aligned reactant/product structures for transition state (
 
 ## Requirements
 
-- Python ≥ 3.8 (3.10 recommended)
+- Python ≥ 3.10
 - numpy, scipy ≥ 1.11
 - cclib ≥ 1.7.1
 - ORCA or Gaussian available on PATH (select with `-ca orca|gaussian`)
