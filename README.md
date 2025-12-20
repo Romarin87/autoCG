@@ -4,7 +4,7 @@ AutoCG generates well-aligned reactant/product structures for transition state (
 
 ## Requirements
 
-- Python ≥ 3.8
+- Python ≥ 3.8 (3.10 recommended)
 - numpy, scipy ≥ 1.11
 - cclib ≥ 1.7.1
 - ORCA or Gaussian available on PATH (select with `-ca orca|gaussian`)
@@ -13,7 +13,9 @@ AutoCG generates well-aligned reactant/product structures for transition state (
 ## Installation
 
 ```bash
-git clone https://github.com/your/repo.git
+conda create -n autocg python=3.10
+conda activate autocg
+git clone https://github.com/kyunghoonlee777/autoCG
 cd autoCG
 pip install .
 # or editable
@@ -48,7 +50,10 @@ pip install -e .
   2 3 F
   ```
 
-Important options: `-nc` (#conformers), `-ts/-fs/-bs` (bond scaling), `-p` (UFF preopt), `-se` (stereo enumeration), `-uc` (CREST), `-ca` (calculator).
+Important options:
+- `-nc` (#conformers), `-ts/-fs/-bs` (bond scaling), `-p` (UFF preopt), `-se` (stereo enumeration), `-uc` (CREST), `-ca` (calculator).
+- `-cc 0` disables connectivity checks (useful for special bridged rings/strained structures where long bonds may be flagged as disconnected).
+- `-cs 0` disables stereochemical checks.
 
 Calculator setup: ensure `g09/g16` or `orca` is on `PATH`; pick with `-ca gaussian|orca`. CREST is optional but needed for `-uc 1`.
 
@@ -76,10 +81,10 @@ Each generated conformer is saved under `result_<idx>/` in the save directory:
 
 - If reaction SMILES carries atom mapping, AutoCG uses it directly to infer bond changes; otherwise, bond changes are inferred automatically.
 - Geometry input must include charge/multiplicity and bond-change info; initial alignment is not required.
+- Spectator molecules that do not participate in bond breaking/formation are ignored and not modeled.
 - Algorithm details on bond-change inference and generation follow Chem. Sci. 2018 / J. Chem. Inf. Model. 2012 (see: [https://pubs.acs.org/doi/full/10.1021/ci3002217](https://pubs.acs.org/doi/full/10.1021/ci3002217)).
 - Original extended instructions and calculator implementation notes are kept in `subpage/details.md`.
 
 ## License
 
 BSD 3-Clause License.
-

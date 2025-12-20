@@ -13,6 +13,7 @@ dependencies = [
     "numpy",
     "scipy>=1.11",
     "cclib>=1.7.1,<2",
+    "rdkit",
 ]
 
 [project.optional-dependencies]

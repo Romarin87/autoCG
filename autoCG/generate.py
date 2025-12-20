@@ -1167,6 +1167,11 @@ def main(argv=None):
     sys.stdout = sys.__stdout__
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "reaction",
+        nargs="?",
+        help="Reaction SMILES (with >>) or path to geometry/bond-change input file",
+    )
+    parser.add_argument(
         "--save_directory",
         "-sd",
         type=str,
@@ -1364,11 +1369,11 @@ def main(argv=None):
 
     if argv is None:
         argv = sys.argv[1:]
-    if len(argv) == 0:
+    args = parser.parse_args(argv)
+    if args.reaction is None:
         parser.print_help()
         return
-    reaction_arg = argv[0]
-    args = parser.parse_args(argv[1:])
+    reaction_arg = args.reaction
     save_directory = (
         os.path.abspath(args.save_directory) if args.save_directory is not None else None
     )
