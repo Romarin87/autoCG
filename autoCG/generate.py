@@ -217,13 +217,15 @@ class GuessGenerator:
         for i, molecule in enumerate(molecules):
             self.save_geometry(molecule, i, name)
 
-    def save_result(self, reaction_info, mapping_info, matching_results):
+    def save_result(self, reaction_info, mapping_info, matching_results, mapping_atom_map_nums=None):
         if self.save_directory is None:
             return
         with open(os.path.join(self.save_directory, "info.pkl"), "wb") as f:
             pickle.dump(reaction_info, f)
             pickle.dump(mapping_info, f)
             pickle.dump(matching_results, f)
+            if mapping_atom_map_nums is not None:
+                pickle.dump(mapping_atom_map_nums, f)
 
     def get_reaction_info(self, reactant, product):
         reaction_info = dict()
@@ -697,18 +699,18 @@ class GuessGenerator:
     def check_stereochemistry(self,reactant,reactant_atom_stereo_infos, reactant_bond_stereo_infos):
         # Check stereo result
         stereo_result = [True, True]
-        for atom_index in reactant_atom_stereo_infos:
-            final_atom_stereo_info = stereo.get_atom_stereo(
-                reactant, atom_index
-            )
-            if final_atom_stereo_info * reactant_atom_stereo_infos[atom_index] < 0:
+        for atom_index, ref_stereo in reactant_atom_stereo_infos.items():
+            final_atom_stereo_info = stereo.get_atom_stereo(reactant, atom_index)
+            if ref_stereo in (None, 0) or final_atom_stereo_info in (None, 0):
+                continue
+            if final_atom_stereo_info * ref_stereo < 0:
                 stereo_result[0] = False
                 break
-        for bond in reactant_bond_stereo_infos:
-            final_bond_stereo_info = stereo.get_bond_stereo(
-                reactant, bond
-            )
-            if final_bond_stereo_info * reactant_bond_stereo_infos[bond] < 0:
+        for bond, ref_stereo in reactant_bond_stereo_infos.items():
+            final_bond_stereo_info = stereo.get_bond_stereo(reactant, bond)
+            if ref_stereo in (None, 0) or final_bond_stereo_info in (None, 0):
+                continue
+            if final_bond_stereo_info * ref_stereo < 0:
                 stereo_result[1] = False
                 break
         return stereo_result
@@ -1009,7 +1011,14 @@ class GuessGenerator:
                 self.calculator.clean_scratch()
                 matching_result = self.identify_connectivity(reactant_molecules, reduced_reactant, product_molecules, reduced_product)
                 reactant_molecules.bo_matrix = reduced_reactant.bo_matrix
-                stereo_result = self.check_stereochemistry(reactant_molecules,reactant_atom_stereo_infos, reactant_bond_stereo_infos)
+                if self.check_stereo:
+                    stereo_result = self.check_stereochemistry(
+                        reactant_molecules,
+                        reactant_atom_stereo_infos,
+                        reactant_bond_stereo_infos,
+                    )
+                else:
+                    stereo_result = [True, True]
             else:
                 matching_result = [False, False]
                 stereo_result = [False, False]
@@ -1025,7 +1034,7 @@ class GuessGenerator:
         
         self.write_log(f"All matching results: {matching_results}\n")
         self.write_log(f"All stereo results: {stereo_results}\n")
-        # self.save_result(reaction_info, mapping_info, matching_results)
+        self.save_result(reaction_info, mapping_info, matching_results)
         stereo_matching_indices = []
         connectivity_matching_indices = []
         # Get indices that both are resulted in matched
