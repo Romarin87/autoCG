@@ -217,15 +217,13 @@ class GuessGenerator:
         for i, molecule in enumerate(molecules):
             self.save_geometry(molecule, i, name)
 
-    def save_result(self, reaction_info, mapping_info, matching_results, mapping_atom_map_nums=None):
+    def save_result(self, reaction_info, mapping_info, matching_results):
         if self.save_directory is None:
             return
         with open(os.path.join(self.save_directory, "info.pkl"), "wb") as f:
             pickle.dump(reaction_info, f)
             pickle.dump(mapping_info, f)
             pickle.dump(matching_results, f)
-            if mapping_atom_map_nums is not None:
-                pickle.dump(mapping_atom_map_nums, f)
 
     def get_reaction_info(self, reactant, product):
         reaction_info = dict()
@@ -1034,7 +1032,7 @@ class GuessGenerator:
         
         self.write_log(f"All matching results: {matching_results}\n")
         self.write_log(f"All stereo results: {stereo_results}\n")
-        self.save_result(reaction_info, mapping_info, matching_results)
+        # self.save_result(reaction_info, mapping_info, matching_results)
         stereo_matching_indices = []
         connectivity_matching_indices = []
         # Get indices that both are resulted in matched
