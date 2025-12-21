@@ -260,6 +260,10 @@ class GuessGenerator:
         p_mol = Chem.MolFromSmiles(product_smiles, sanitize=False)
         r_bonds, r_map, r_orders = extract_bonds_and_map(r_mol)
         p_bonds, p_map, p_orders = extract_bonds_and_map(p_mol)
+
+        # print(reactant_smiles)
+        # print(r_map)
+
         if r_bonds is None or p_bonds is None:
             return None
 
@@ -273,6 +277,9 @@ class GuessGenerator:
                 reaction_info["f"].append(tuple(sorted((r_map[m1], r_map[m2]))))
             elif p_order == 0 and r_order > 0:
                 reaction_info["b"].append(tuple(sorted((r_map[m1], r_map[m2]))))
+        # Preserve atom-map to RDKit index mapping for downstream reordering
+        reaction_info["map_r"] = r_map
+        # reaction_info["map_p"] = p_map
         return reaction_info
     
     def find_spectator_molecules(self, reactant, reaction_info):
@@ -312,6 +319,15 @@ class GuessGenerator:
         for i in range(len(reaction_info["b"])):
             start, end = reaction_info["b"][i]
             reaction_info["b"][i] = (mapping_info[start], mapping_info[end])
+
+        # Also store map-number -> reduced index mapping for participating atoms
+        if "map_r" in reaction_info:
+            reduced_map_r = {
+                map_num: mapping_info[idx]
+                for map_num, idx in reaction_info["map_r"].items()
+                if idx in mapping_info
+            }
+            reaction_info["map_r_reduced"] = reduced_map_r
 
         return reaction_info, mapping_info, spectating_molecules
 
@@ -1032,7 +1048,7 @@ class GuessGenerator:
         
         self.write_log(f"All matching results: {matching_results}\n")
         self.write_log(f"All stereo results: {stereo_results}\n")
-        # self.save_result(reaction_info, mapping_info, matching_results)
+        self.save_result(reaction_info, mapping_info, matching_results)
         stereo_matching_indices = []
         connectivity_matching_indices = []
         # Get indices that both are resulted in matched
