@@ -41,6 +41,7 @@ class Atom:
         self.x = None
         self.y = None
         self.z = None
+        self.map_num = None
         if data is not None:
             if type(data) == str:
                 self.element = data
@@ -356,6 +357,7 @@ class Atom:
         new_atom.x = self.x
         new_atom.y = self.y
         new_atom.z = self.z
+        new_atom.map_num = self.map_num
         return new_atom 
 
     def is_same_atom(self,atom):
@@ -1152,6 +1154,8 @@ class Molecule:
                     new_z_list[idx] = 10 + adj #replace with one higher period element with proper valency
         #Construct new Molecule
         virtual_molecule = Molecule([new_z_list, adj_matrix, None, None])
+        for src_atom, dst_atom in zip(self.atom_list, virtual_molecule.atom_list):
+            dst_atom.map_num = getattr(src_atom, "map_num", None)
 
         #Construct BO and Chg
         new_bo_matrix = process.get_bo_matrix_from_adj_matrix(virtual_molecule, virtual_chg)
@@ -1323,6 +1327,8 @@ class Molecule:
         for coordinate_list in coordinates:
             new_atom_list = [atom.copy() for atom in self.atom_list]
             conformer = Molecule((self.get_z_list(),self.get_adj_matrix(),None,self.get_chg_list()))
+            for src_atom, dst_atom in zip(self.atom_list, conformer.atom_list):
+                dst_atom.map_num = getattr(src_atom, "map_num", None)
             process.locate_molecule(conformer,coordinate_list)
             conformer_list.append(conformer)
         return conformer_list
@@ -1337,8 +1343,29 @@ class Molecule:
         print (self.get_content(option))
         
 
-    def get_content(self,option='element',criteria = 1e-4):
+    def _get_output_atoms(self):
         atom_list = self.atom_list
+        map_nums = []
+        has_mapped = False
+        for atom in atom_list:
+            map_num = getattr(atom, "map_num", None)
+            map_nums.append(map_num)
+            if map_num is not None and map_num > 0:
+                has_mapped = True
+        if not has_mapped:
+            return atom_list
+        order = list(range(len(atom_list)))
+        order.sort(
+            key=lambda i: (
+                map_nums[i] is None or map_nums[i] <= 0,
+                map_nums[i] if map_nums[i] is not None else 0,
+                i,
+            )
+        )
+        return [atom_list[i] for i in order]
+
+    def get_content(self,option='element',criteria = 1e-4):
+        atom_list = self._get_output_atoms()
         content = ''
         for atom in atom_list:
             content += atom.get_content(option,criteria)
@@ -1354,7 +1381,7 @@ class Molecule:
 
         :return:
         """
-        atom_list = self.atom_list
+        atom_list = self._get_output_atoms()
         n = len(atom_list)
         f = open(file_directory, 'w')
         #f = open(file_directory, 'a')
@@ -1932,8 +1959,29 @@ class Conformer:
         print (self.get_content(option))
         
 
-    def get_content(self,option='element',criteria = 1e-4):
+    def _get_output_atoms(self):
         atom_list = self.atom_list
+        map_nums = []
+        has_mapped = False
+        for atom in atom_list:
+            map_num = getattr(atom, "map_num", None)
+            map_nums.append(map_num)
+            if map_num is not None and map_num > 0:
+                has_mapped = True
+        if not has_mapped:
+            return atom_list
+        order = list(range(len(atom_list)))
+        order.sort(
+            key=lambda i: (
+                map_nums[i] is None or map_nums[i] <= 0,
+                map_nums[i] if map_nums[i] is not None else 0,
+                i,
+            )
+        )
+        return [atom_list[i] for i in order]
+
+    def get_content(self,option='element',criteria = 1e-4):
+        atom_list = self._get_output_atoms()
         content = ''
         for atom in atom_list:
             content += atom.get_content(option,criteria)
@@ -2006,4 +2054,3 @@ class Conformer:
 
     def get_ace_mol(self):
         pass
-

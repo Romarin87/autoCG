@@ -84,6 +84,7 @@ def get_ace_mol_from_rd_mol(rd_molecule, add_hydrogen=True, include_stereo=False
         rd_atom = rd_molecule.GetAtomWithIdx(i)
         ace_atom = chem.Atom()
         chg_list.append(rd_atom.GetFormalCharge())
+        ace_atom.map_num = rd_atom.GetAtomMapNum()
         """
         position = rd_molecule.GetAtomPosition(i)
         if position!=None:

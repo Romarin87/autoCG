@@ -179,9 +179,31 @@ class GuessGenerator:
 
     def get_geometry(self, molecule):
         content = ""
-        for atom in molecule.atom_list:
+        for atom in self._get_output_atoms(molecule):
             content = content + atom.get_content()
         return content
+
+    def _get_output_atoms(self, molecule):
+        atom_list = molecule.atom_list
+        map_nums = []
+        has_mapped = False
+        for atom in atom_list:
+            map_num = getattr(atom, "map_num", None)
+            map_nums.append(map_num)
+            if map_num is not None and map_num > 0:
+                has_mapped = True
+        if not has_mapped:
+            return atom_list
+        # Keep unmapped (0/None) atoms at the end; preserve original order on ties.
+        order = list(range(len(atom_list)))
+        order.sort(
+            key=lambda i: (
+                map_nums[i] is None or map_nums[i] <= 0,
+                map_nums[i] if map_nums[i] is not None else 0,
+                i,
+            )
+        )
+        return [atom_list[i] for i in order]
 
     def write_geometry(self, molecule, name="test", extension="xyz"):
         if self.save_directory is None:
@@ -376,6 +398,8 @@ class GuessGenerator:
         # Sample one conformer with valid molecule
         ts_molecule = chem.Molecule([z_list, adj_matrix, None, None])
         ts_molecule.chg = reactant.get_chg()
+        for src_atom, dst_atom in zip(reactant.atom_list, ts_molecule.atom_list):
+            dst_atom.map_num = getattr(src_atom, "map_num", None)
         ts_molecule = ts_molecule.get_valid_molecule()
         ts_chg_list = ts_molecule.get_chg_list()
         ts_bo = ts_molecule.get_bo_matrix()
