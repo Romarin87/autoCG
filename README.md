@@ -15,7 +15,7 @@ AutoCG generates well-aligned reactant/product structures for transition state (
 ```bash
 conda create -n autocg python=3.10
 conda activate autocg
-git clone https://github.com/kyunghoonlee777/autoCG
+git clone https://github.com/Romarin87/autoCG
 cd autoCG
 pip install .
 # or editable
