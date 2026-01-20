@@ -1,7 +1,8 @@
 # Python 编译文件
-__pycache__/          # 忽略 Python 自动生成的 __pycache__ 目录（.pyc 都存在这里）
-*.pyc                 # 忽略所有 .pyc 字节码文件
-*.pyo                 # 忽略旧版本 Python 编译文件
-*.pyd                 # 忽略 Windows 下的 Python 扩展文件
-*.so                  # 忽略 Linux/Mac 下的 Python 扩展文件
-.Python               # 忽略虚拟环境相关文件（可选，如有虚拟环境建议加）
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.Python
+

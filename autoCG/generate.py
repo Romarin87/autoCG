@@ -1,5 +1,7 @@
 ### python provided modules ###
 import argparse
+import concurrent.futures
+import csv
 import datetime
 import os
 import pickle
@@ -8,6 +10,7 @@ import sys
 import time
 from copy import deepcopy
 from itertools import combinations
+from pathlib import Path
 
 ### extra common libraries ###
 import numpy as np
@@ -50,7 +53,7 @@ class GuessGenerator:
         self.scan_num_relaxation = 3
         self.scan_qc_step_size = 0.2
         self.unit_converter = 627.5095
-        self.energy_criteria = 10.0 / self.unit_converter  # 10.0 kcal/mol
+        self.energy_criteria = 1.0 / self.unit_converter  # 1.0 kcal/mol
         self.library = "rdkit"
         self.save_directory = None
         self.working_directory = None
@@ -1187,6 +1190,315 @@ class GuessGenerator:
         )
 
 
+def normalize_reaction_line(line: str) -> str | None:
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    if len(line) >= 2 and line[0] == line[-1] and line[0] in {"'", '"'}:
+        line = line[1:-1].strip()
+    return line or None
+
+
+def parse_reaction_smiles(reaction: str) -> tuple[str, str]:
+    if ">>" in reaction:
+        parts = reaction.split(">>")
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return "", ""
+    parts = reaction.split(">")
+    if len(parts) == 3:
+        return parts[0], parts[2]
+    return "", ""
+
+
+def collect_autocg_rows(
+    reaction_dir: Path,
+    output_base: Path,
+    reactant_smiles: str,
+    product_smiles: str,
+    csv_charge: str,
+    csv_mult: str,
+) -> tuple[list[dict[str, str]], list[Path]]:
+    result_dirs = sorted([p for p in reaction_dir.glob("result_*") if p.is_dir()])
+    targets = result_dirs if result_dirs else [reaction_dir]
+    rows = []
+    missing = []
+    for target_dir in targets:
+        react = target_dir / "R.xyz"
+        prod = target_dir / "P.xyz"
+        ts = target_dir / "initial_ts.xyz"
+        if not (react.is_file() and prod.is_file() and ts.is_file()):
+            missing.append(target_dir)
+            continue
+        rows.append(
+            {
+                "React": str(react.resolve()),
+                "Prod": str(prod.resolve()),
+                "TS": str(ts.resolve()),
+                "Label": str(target_dir.relative_to(output_base)),
+                "Charge": csv_charge,
+                "Mult": csv_mult,
+                "ReactSmiles": reactant_smiles,
+                "ProdSmiles": product_smiles,
+            }
+        )
+    return rows, missing
+
+
+def build_generator(args: argparse.Namespace) -> GuessGenerator:
+    if args.calculator == "gaussian":
+        calculator = gaussian.Gaussian()
+    else:
+        calculator = orca.Orca()
+    generator = GuessGenerator(
+        calculator,
+        args.ts_scale,
+        args.form_scale,
+        args.break_scale,
+        args.protect_scale,
+        args.max_separation,
+        args.step_size,
+        args.qc_step_size,
+        args.num_relaxation,
+    )
+    generator.library = args.library
+    generator.num_conformer = args.num_conformer
+    generator.set_energy_criteria(args.energy_criteria)
+    generator.maximal_displcement = args.maximal_displacement
+    generator.k = args.k
+    generator.scan_num_relaxation = args.scan_num_relaxation
+    generator.scan_qc_step_size = args.scan_qc_step_size
+    generator.window = args.window
+    generator.num_process = args.num_process
+    generator.use_crest = bool(args.use_crest)
+    generator.enumerate_stereo = bool(args.stereo_enumerate)
+    generator.check_connectivity = bool(args.check_connectivity)
+    generator.check_stereo = bool(args.check_stereo)
+    generator.preoptimize = bool(args.preoptimize)
+    print(generator.preoptimize)
+    return generator
+
+
+def run_reaction(
+    reaction_arg: str,
+    args: argparse.Namespace,
+    save_directory: str | None,
+    working_directory: str | None,
+) -> None:
+    generator = build_generator(args)
+    if ">>" in reaction_arg:
+        generator.get_oriented_RPs_from_smiles(
+            reaction_arg,
+            save_directory=save_directory,
+            working_directory=working_directory,
+        )
+        return
+
+    input_directory = reaction_arg
+    folder_directory = os.path.dirname(input_directory)
+    if folder_directory is None:
+        folder_directory = os.getcwd()
+    folder_directory = os.path.abspath(folder_directory)
+    if save_directory is None:
+        save_directory = folder_directory
+
+    if args.use_h_content == 1:
+        try:
+            h_file_directory = os.path.join(folder_directory, "h_content")
+            h_content = ""
+            with open(h_file_directory) as f:
+                for line in f:
+                    h_content = h_content + line
+        except Exception:
+            h_content = None
+    else:
+        h_content = None
+    generator.h_content = h_content
+    generator.get_oriented_RPs_from_geometry(
+        input_directory,
+        save_directory=save_directory,
+        working_directory=working_directory,
+    )
+
+
+def run_reaction_task(
+    reaction_arg: str,
+    args_dict: dict,
+    save_directory: str,
+    working_directory: str,
+) -> None:
+    args = argparse.Namespace(**args_dict)
+    run_reaction(reaction_arg, args, save_directory, working_directory)
+
+
+def run_batch(args: argparse.Namespace) -> int:
+    input_path = Path(args.input_file).expanduser().resolve()
+    if not input_path.exists():
+        print(f"Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    base_save_dir = (
+        Path(args.save_directory).expanduser().resolve()
+        if args.save_directory is not None
+        else Path.cwd() / "gly_results"
+    )
+    base_work_dir = (
+        Path(args.working_directory).expanduser().resolve()
+        if args.working_directory is not None
+        else base_save_dir
+    )
+    base_save_dir.mkdir(parents=True, exist_ok=True)
+    base_work_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_csv = (
+        Path(args.summary_csv).expanduser().resolve()
+        if args.summary_csv is not None
+        else base_save_dir / "reaction_inputs.csv"
+    )
+    summary_csv.parent.mkdir(parents=True, exist_ok=True)
+
+    reactions: list[str] = []
+    with input_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            reaction = normalize_reaction_line(line)
+            if reaction:
+                reactions.append(reaction)
+    if not reactions:
+        print(f"No reactions found in {input_path}", file=sys.stderr)
+        return 1
+
+    total = len(reactions)
+    start = args.start
+    end = args.end if args.end is not None else total
+    if start < 1 or end < 1 or start > end or end > total:
+        print(f"Invalid range: start={start}, end={end}, total={total}", file=sys.stderr)
+        return 1
+
+    width = len(str(total))
+    tasks = []
+    with summary_csv.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "React",
+                "Prod",
+                "TS",
+                "Label",
+                "Charge",
+                "Mult",
+                "ReactSmiles",
+                "ProdSmiles",
+            ],
+        )
+        writer.writeheader()
+
+        for idx in range(start, end + 1):
+            reaction = reactions[idx - 1]
+            reactant_smiles, product_smiles = parse_reaction_smiles(reaction)
+            reaction_dir = base_save_dir / f"{args.prefix}_{idx:0{width}d}"
+            working_dir = base_work_dir / f"{args.prefix}_{idx:0{width}d}"
+            if reaction_dir.exists() and not args.overwrite:
+                rows, missing = collect_autocg_rows(
+                    reaction_dir,
+                    base_save_dir,
+                    reactant_smiles,
+                    product_smiles,
+                    args.csv_charge,
+                    args.csv_mult,
+                )
+                for row in rows:
+                    writer.writerow(row)
+                handle.flush()
+                for target_dir in missing:
+                    print(f"[{idx}/{total}] missing files in {target_dir}", file=sys.stderr)
+                continue
+
+            reaction_dir.mkdir(parents=True, exist_ok=True)
+            working_dir.mkdir(parents=True, exist_ok=True)
+            (reaction_dir / "reaction.smi").write_text(reaction + "\n", encoding="utf-8")
+
+            if args.dry_run:
+                print(f"[{idx}/{total}] {reaction_dir}")
+                continue
+
+            tasks.append(
+                (
+                    idx,
+                    reaction,
+                    str(reaction_dir),
+                    str(working_dir),
+                    reactant_smiles,
+                    product_smiles,
+                )
+            )
+
+        if args.dry_run:
+            return 0
+
+        if args.jobs < 1:
+            print("--jobs must be >= 1.", file=sys.stderr)
+            return 1
+
+        args_dict = vars(args).copy()
+        failures: list[int] = []
+        if args.jobs == 1:
+            for idx, reaction, save_dir, work_dir, reactant_smiles, product_smiles in tasks:
+                run_reaction(reaction, args, save_dir, work_dir)
+                rows, missing = collect_autocg_rows(
+                    Path(save_dir),
+                    base_save_dir,
+                    reactant_smiles,
+                    product_smiles,
+                    args.csv_charge,
+                    args.csv_mult,
+                )
+                for row in rows:
+                    writer.writerow(row)
+                handle.flush()
+                for target_dir in missing:
+                    print(f"[{idx}/{total}] missing files in {target_dir}", file=sys.stderr)
+            return 0
+
+        with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs) as executor:
+            future_to_meta = {
+                executor.submit(
+                    run_reaction_task,
+                    reaction,
+                    args_dict,
+                    save_dir,
+                    work_dir,
+                ): (idx, save_dir, reactant_smiles, product_smiles)
+                for idx, reaction, save_dir, work_dir, reactant_smiles, product_smiles in tasks
+            }
+            for future in concurrent.futures.as_completed(future_to_meta):
+                idx, save_dir, reactant_smiles, product_smiles = future_to_meta[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"[{idx}/{total}] failed: {exc}", file=sys.stderr)
+                    failures.append(idx)
+                    continue
+                rows, missing = collect_autocg_rows(
+                    Path(save_dir),
+                    base_save_dir,
+                    reactant_smiles,
+                    product_smiles,
+                    args.csv_charge,
+                    args.csv_mult,
+                )
+                for row in rows:
+                    writer.writerow(row)
+                handle.flush()
+                for target_dir in missing:
+                    print(f"[{idx}/{total}] missing files in {target_dir}", file=sys.stderr)
+
+        if failures:
+            failures.sort()
+            print(f"Failed reactions: {failures}", file=sys.stderr)
+            return 1
+    return 0
+
+
 def main(argv=None):
     sys.stdout = sys.__stdout__
     parser = argparse.ArgumentParser()
@@ -1194,6 +1506,13 @@ def main(argv=None):
         "reaction",
         nargs="?",
         help="Reaction SMILES (with >>) or path to geometry/bond-change input file",
+    )
+    parser.add_argument(
+        "--input-file",
+        "-i",
+        type=str,
+        help="Path to a file containing reaction SMILES, one per line.",
+        default=None,
     )
     parser.add_argument(
         "--save_directory",
@@ -1208,6 +1527,57 @@ def main(argv=None):
         type=str,
         help="working directory for QC",
         default=None,
+    )
+    parser.add_argument(
+        "--summary-csv",
+        type=str,
+        default=None,
+        help="Summary CSV path for batch runs.",
+    )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of parallel jobs for batch runs.",
+    )
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default="reaction",
+        help="Folder name prefix for batch outputs.",
+    )
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=1,
+        help="1-based start index within input file.",
+    )
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="1-based end index within input file (inclusive).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Run even if output folder already exists.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned batch work without running.",
+    )
+    parser.add_argument(
+        "--csv-charge",
+        default="",
+        help="Charge value to write into summary CSV.",
+    )
+    parser.add_argument(
+        "--csv-mult",
+        default="",
+        help="Multiplicity value to write into summary CSV.",
     )
     parser.add_argument(
         "--library",
@@ -1315,7 +1685,7 @@ def main(argv=None):
         "-ec",
         type=float,
         help="Energy criteria for precomplex optimization",
-        default=10.0,
+        default=1.0,
     )
     parser.add_argument(
         "--preoptimize",
@@ -1394,6 +1764,8 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     args = parser.parse_args(argv)
+    if args.input_file:
+        return run_batch(args)
     if args.reaction is None:
         parser.print_help()
         return
@@ -1406,82 +1778,7 @@ def main(argv=None):
         if args.working_directory is not None
         else None
     )
-    if args.calculator == "gaussian":
-        calculator = gaussian.Gaussian()
-    else:
-        calculator = orca.Orca()
-    generator = GuessGenerator(
-        calculator,
-        args.ts_scale,
-        args.form_scale,
-        args.break_scale,
-        args.protect_scale,
-        args.max_separation,
-        args.step_size,
-        args.qc_step_size,
-        args.num_relaxation,
-    )
-    generator.library = args.library
-    generator.num_conformer = args.num_conformer
-    generator.set_energy_criteria(args.energy_criteria)
-    generator.maximal_displcement = args.maximal_displacement
-    generator.k = args.k
-    generator.scan_num_relaxation = args.scan_num_relaxation
-    generator.scan_qc_step_size = args.scan_qc_step_size
-    generator.window = args.window
-    generator.num_process = args.num_process
-        
-    generator.use_crest = bool(args.use_crest)
-    generator.enumerate_stereo = bool(args.stereo_enumerate)
-    generator.check_connectivity = bool(args.check_connectivity)
-    generator.check_stereo = bool(args.check_stereo)
-
-    generator.preoptimize = bool(args.preoptimize)
-    print (generator.preoptimize)
-
-    if ">>" in reaction_arg:
-        (
-            RP_pairs,
-            reaction_info,
-            mapping_info,
-            matching_results,
-        ) = generator.get_oriented_RPs_from_smiles(
-            reaction_arg,
-            save_directory=save_directory,
-            working_directory=working_directory,
-        )
-    else:
-        input_directory = reaction_arg
-        folder_directory = os.path.dirname(input_directory)
-        if folder_directory is None:
-            folder_directory = os.getcwd()
-        folder_directory = os.path.abspath(folder_directory)
-        if save_directory is None:
-            save_directory = folder_directory
-         
-        # Check h_content
-        if args.use_h_content == 1:
-            try:
-                h_file_directory = os.path.join(folder_directory,'h_content')
-                h_content = ''
-                with open(h_file_directory) as f:
-                    for line in f:
-                        h_content = h_content + line
-            except:
-                h_content = None
-        else:
-            h_content = None
-        generator.h_content = h_content
-        (
-            RP_pairs,
-            reaction_info,
-            mapping_info,
-            matching_results,
-        ) = generator.get_oriented_RPs_from_geometry(
-            input_directory,
-            save_directory=save_directory,
-            working_directory=working_directory,
-        )
+    run_reaction(reaction_arg, args, save_directory, working_directory)
 
 
 if __name__ == "__main__":
