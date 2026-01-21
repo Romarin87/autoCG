@@ -146,7 +146,7 @@ class GuessGenerator:
             with open(qc_directory) as f:
                 for line in f:
                     content = content + line
-            self.calcualtor.content = content
+            self.calculator.content = content
         else:
             self.write_log(
                 f"Input template for quantum calculation is not found! Path will be found with default parameters!\n\n"
@@ -166,7 +166,7 @@ class GuessGenerator:
         if self.calculator is not None:
             self.calculator.change_working_directory(working_directory)
         else:
-            print("Calculator does not exist!!! Define a calcualtor first!")
+            print("Calculator does not exist!!! Define a calculator first!")
 
     def set_energy_criteria(self, criteria):
         self.energy_criteria = criteria / self.unit_converter
@@ -240,7 +240,7 @@ class GuessGenerator:
 
     def save_geometries(self, molecules, name="test", extension="xyz"):
         for i, molecule in enumerate(molecules):
-            self.save_geometry(molecule, i, name)
+            self.write_geometry(molecule, f"{name}_{i+1}", extension)
 
     def save_result(self, reaction_info, mapping_info, matching_results):
         if self.save_directory is None:
@@ -406,7 +406,9 @@ class GuessGenerator:
         ts_molecule = ts_molecule.get_valid_molecule()
         ts_chg_list = ts_molecule.get_chg_list()
         ts_bo = ts_molecule.get_bo_matrix()
-        ts_molecules = ts_molecule.sample_conformers(1)
+        ts_molecules = ts_molecule.sample_conformers(
+            self.num_conformer, library=self.library
+        )
         for ts_molecule in ts_molecules:
             ts_molecule.bo_matrix = ts_bo
             ts_molecule.atom_feature['chg'] = ts_chg_list
@@ -500,7 +502,7 @@ class GuessGenerator:
             if bond in reaction_info['b'] + reaction_info['f']:
                 constraints[bond] = (r1+r2) * self.ts_scale
             else:
-                constraints[bond] = (r1+r2) * self.form_scale
+                constraints[bond] = (r1+r2) * self.protect_scale
         
         # Get back to ts z list ...
         for i in range(len(ts_z_list)):
@@ -608,6 +610,8 @@ class GuessGenerator:
             r1 = molecule.atom_list[start].get_radius()
             r2 = molecule.atom_list[end].get_radius()
             target_d = (r1 + r2) * self.break_scale
+            if self.max_separation is not None and self.max_separation > 0:
+                target_d = min(target_d, self.max_separation)
             status_q[bond] = d
             if target_d > max_distance:
                 max_distance = target_d
@@ -668,8 +672,13 @@ class GuessGenerator:
         original_coordinate = reactant.get_coordinate_list()
         if k is None:
             k = self.k
-        #self.uff_optimizer.optimize_geometry(reactant, constraints, maximal_displacement, k) This also works well !!!
-        self.uff_optimizer.optimize_geometry(reactant, [], maximal_displacement, k,True)
+        self.uff_optimizer.optimize_geometry(
+            reactant,
+            constraints,
+            maximal_displacement,
+            k,
+            add_atom_constraint=True,
+        )
         if not process.check_geometry(reactant.get_coordinate_list()):
             print ('UFF optimization not sucessful!!!')
             print ('Loading original geometry ...')
@@ -895,7 +904,9 @@ class GuessGenerator:
         self.write_log(f"  library: {self.library}\n")
         self.write_log(f"  ts_scale: {self.ts_scale}\n")
         self.write_log(f"  form_scale: {self.form_scale}\n")
-        self.write_log(f"  broken_scale: {self.break_scale}\n")
+        self.write_log(f"  break_scale: {self.break_scale}\n")
+        self.write_log(f"  protect_scale: {self.protect_scale}\n")
+        self.write_log(f"  max_separation: {self.max_separation}\n")
         self.write_log(f"  num_conformer: {self.num_conformer}\n")
         self.write_log(f"  E_criteria (Delta E): {self.energy_criteria * self.unit_converter} kcal/mol\n")
         self.write_log(f"  step_size: {self.step_size}\n")
@@ -1102,9 +1113,11 @@ class GuessGenerator:
         save_directory=None,
         working_directory=None,
     ):
-        smiles_list = reaction_smiles.split(">>")
-        reactant_smiles = smiles_list[0]
-        product_smiles = smiles_list[1]
+        reactant_smiles, product_smiles = parse_reaction_smiles(reaction_smiles)
+        if not reactant_smiles or not product_smiles:
+            raise ValueError(
+                "Reaction SMILES must be 'reactants>>products' (or 'reactants>agents>products')."
+            )
         reaction_info = None
         if ":" in reaction_smiles:
             reaction_info = self.get_reaction_info_from_mapping(
@@ -1264,7 +1277,7 @@ def build_generator(args: argparse.Namespace) -> GuessGenerator:
     generator.library = args.library
     generator.num_conformer = args.num_conformer
     generator.set_energy_criteria(args.energy_criteria)
-    generator.maximal_displcement = args.maximal_displacement
+    generator.maximal_displacement = args.maximal_displacement
     generator.k = args.k
     generator.scan_num_relaxation = args.scan_num_relaxation
     generator.scan_qc_step_size = args.scan_qc_step_size
@@ -1275,7 +1288,6 @@ def build_generator(args: argparse.Namespace) -> GuessGenerator:
     generator.check_connectivity = bool(args.check_connectivity)
     generator.check_stereo = bool(args.check_stereo)
     generator.preoptimize = bool(args.preoptimize)
-    print(generator.preoptimize)
     return generator
 
 
@@ -1286,7 +1298,8 @@ def run_reaction(
     working_directory: str | None,
 ) -> None:
     generator = build_generator(args)
-    if ">>" in reaction_arg:
+    reactant_smiles, product_smiles = parse_reaction_smiles(reaction_arg)
+    if reactant_smiles and product_smiles:
         generator.get_oriented_RPs_from_smiles(
             reaction_arg,
             save_directory=save_directory,
@@ -1294,7 +1307,11 @@ def run_reaction(
         )
         return
 
-    input_directory = reaction_arg
+    reaction_path = Path(reaction_arg).expanduser()
+    if not reaction_path.exists():
+        raise FileNotFoundError(f"Input file not found: {reaction_path}")
+
+    input_directory = str(reaction_path)
     folder_directory = os.path.dirname(input_directory)
     if folder_directory is None:
         folder_directory = os.getcwd()
@@ -1717,8 +1734,8 @@ def main(argv=None):
         "--maximal_displacement",
         "-md",
         type=float,
-        help="Maximal displacement change for ",
-        default=10000,
+        help="Maximal displacement allowed during UFF preoptimization (Angstrom).",
+        default=0.2,
     )
 
     parser.add_argument(

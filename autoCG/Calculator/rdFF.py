@@ -164,7 +164,7 @@ class UFFOptimizer:
     def relax_geometry(
         self,
         molecule,
-        contraints=None,
+        constraints=None,
         chg=None,
         multiplicity=None,
         file_name=None,
@@ -173,7 +173,11 @@ class UFFOptimizer:
         save_directory=None,
     ):
         return self.optimize_geometry(
-            molecule, max_cycles=max_cycles, e_tol=e_tol
+            molecule,
+            constraints=constraints or [],
+            maximal_displacement=maximal_displacement,
+            k=50,
+            add_atom_constraint=False,
         )
 
     def clean_geometry(self):
